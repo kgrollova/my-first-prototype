@@ -1,4 +1,4 @@
-const CACHE = 'gymlog-v1';
+const CACHE = 'gymlog-v2';
 
 const PRECACHE = [
   './index.html',
