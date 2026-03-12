@@ -1,0 +1,24 @@
+{
+  "name": "GymLog",
+  "short_name": "GymLog",
+  "description": "Sleduj svůj trénink a osobní rekordy",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f9fafb",
+  "theme_color": "#4F46E5",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

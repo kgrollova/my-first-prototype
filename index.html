@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GymLog</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#4F46E5" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="GymLog" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
@@ -248,17 +255,12 @@
         s + w.exercises.reduce((a, e) =>
           a + e.sets.reduce((b, set) => b + (set.weight && set.reps ? set.weight * set.reps : 0), 0), 0), 0);
 
-      // Mini calendar – current month
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      const firstDay    = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
-      const firstDayISO = firstDay === 0 ? 6 : firstDay - 1;
-      const trainedDays = new Set(
-        workouts
-          .filter(w => new Date(w.date) >= monthStart)
-          .map(w => new Date(w.date).getDate())
-      );
-
-      const monthName = now.toLocaleDateString('cs-CZ', { month: 'long', year: 'numeric' });
+      // Week strip – current ISO week (Mon–Sun)
+      const weekDays = Array.from({ length: 7 }).map((_, i) => {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        return d;
+      });
 
       return (
         <div className="max-w-2xl mx-auto px-4 py-6">
@@ -290,25 +292,22 @@
             </div>
           </div>
 
-          {/* Calendar */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6">
-            <p className="text-sm font-medium text-gray-700 mb-3 capitalize">{monthName}</p>
+          {/* Week strip */}
+          <div className="bg-white rounded-2xl px-3 py-2.5 shadow-sm border border-gray-100 mb-4">
             <div className="grid grid-cols-7 gap-1 text-center">
               {['Po','Út','St','Čt','Pá','So','Ne'].map(d =>
-                <div key={d} className="text-xs text-gray-400 pb-1">{d}</div>
+                <div key={d} className="text-xs text-gray-400 mb-1">{d}</div>
               )}
-              {Array.from({length: firstDayISO}).map((_, i) => <div key={'e'+i} />)}
-              {Array.from({length: daysInMonth}).map((_, i) => {
-                const day = i + 1;
-                const isToday = day === now.getDate();
-                const trained = trainedDays.has(day);
+              {weekDays.map((d, i) => {
+                const isToday   = d.toDateString() === now.toDateString();
+                const trained   = workouts.some(w => new Date(w.date).toDateString() === d.toDateString());
                 return (
-                  <div key={day} className={`
-                    aspect-square flex items-center justify-center rounded-full text-xs font-medium
-                    ${trained ? 'bg-indigo-600 text-white' : ''}
-                    ${isToday && !trained ? 'ring-2 ring-indigo-400 text-indigo-600' : ''}
-                    ${!trained && !isToday ? 'text-gray-500' : ''}
-                  `}>{day}</div>
+                  <div key={i} className={`
+                    mx-auto w-8 h-8 flex items-center justify-center rounded-full text-sm font-medium
+                    ${isToday    ? 'bg-indigo-600 text-white' : ''}
+                    ${!isToday && trained  ? 'bg-indigo-100 text-indigo-700' : ''}
+                    ${!isToday && !trained ? 'text-gray-400' : ''}
+                  `}>{d.getDate()}</div>
                 );
               })}
             </div>
@@ -1070,6 +1069,14 @@
     }
 
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js');
+      });
+    }
   </script>
 </body>
 </html>
