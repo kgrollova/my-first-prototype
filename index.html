@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GymLog</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#4F46E5" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -29,6 +30,13 @@
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="root"></div>
+
+  <script>
+    // Supabase client — init before Babel script runs
+    const SUPABASE_URL = 'https://wzxbrguwzlgwjhnqhixi.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_58lKkJyqj8z4Rlnpi-dNyQ_-TZGpZbf';
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  </script>
 
   <script type="text/babel">
     const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -242,7 +250,7 @@
     }
 
     // ─── Dashboard ────────────────────────────────────────────────────────────
-    function Dashboard({ workouts, onNewWorkout, onOpenWorkout, onOpenExercise }) {
+    function Dashboard({ workouts, onNewWorkout, onOpenWorkout, onOpenExercise, user, onLogout }) {
       const now = new Date();
       const monday = getMondayOfWeek(now);
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -270,10 +278,16 @@
               <h1 className="text-2xl font-bold text-gray-900">GymLog</h1>
               <p className="text-sm text-gray-500">{now.toLocaleDateString('cs-CZ', { weekday:'long', day:'numeric', month:'long' })}</p>
             </div>
-            <button onClick={onNewWorkout}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-colors">
-              + Nový trénink
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={onNewWorkout}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-colors">
+                + Nový trénink
+              </button>
+              <button onClick={onLogout} title={`Odhlásit ${user?.email || ''}`}
+                className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-500 transition-colors flex-shrink-0">
+                {user?.email?.[0]?.toUpperCase() || '?'}
+              </button>
+            </div>
           </div>
 
           {/* Stats cards */}
@@ -986,17 +1000,204 @@
       );
     }
 
+    // ─── Auth Screen ─────────────────────────────────────────────────────────
+    function AuthScreen() {
+      const [email, setEmail]     = useState('');
+      const [sent, setSent]       = useState(false);
+      const [loading, setLoading] = useState(false);
+      const [error, setError]     = useState('');
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!email.trim()) return;
+        setLoading(true); setError('');
+        const redirectTo = window.location.origin + window.location.pathname;
+        const { error: err } = await sb.auth.signInWithOtp({
+          email: email.trim(),
+          options: { emailRedirectTo: redirectTo },
+        });
+        setLoading(false);
+        if (err) setError(err.message);
+        else setSent(true);
+      };
+
+      if (sent) return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full shadow-sm border border-gray-100 text-center">
+            <div className="text-5xl mb-4">📧</div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Zkontroluj email</h2>
+            <p className="text-sm text-gray-500 mb-1">Poslali jsme odkaz na</p>
+            <p className="text-sm font-semibold text-gray-800 mb-4">{email}</p>
+            <p className="text-sm text-gray-400">Klikni na odkaz v emailu a jsi přihlášena.</p>
+            <button onClick={() => setSent(false)} className="mt-5 text-sm text-indigo-600 hover:underline">
+              Zadat jiný email
+            </button>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full shadow-sm border border-gray-100">
+            <div className="text-center mb-7">
+              <div className="text-5xl mb-3">🏋️</div>
+              <h1 className="text-2xl font-bold text-gray-900">GymLog</h1>
+              <p className="text-sm text-gray-400 mt-1">Přihlas se a sleduj svůj pokrok</p>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Tvůj email</label>
+              <input
+                type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="ty@example.com" required
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
+              />
+              {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+              <button type="submit" disabled={loading}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white py-3 rounded-xl text-sm font-semibold transition-colors">
+                {loading ? 'Odesílám...' : 'Poslat přihlašovací odkaz'}
+              </button>
+            </form>
+            <p className="text-xs text-gray-400 text-center mt-4">
+              Bez hesla — přihlásíš se kliknutím na odkaz v emailu
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Loading Screen ───────────────────────────────────────────────────────
+    function LoadingScreen({ message = 'Načítám...' }) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-10 h-10 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-sm text-gray-400">{message}</p>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Migration Modal ──────────────────────────────────────────────────────
+    function MigrationModal({ user, onDone }) {
+      const [status, setStatus] = useState('idle'); // idle | running | done
+
+      const migrate = async () => {
+        setStatus('running');
+        const localWorkouts  = load(WORKOUTS_KEY, []);
+        const localExercises = load(CUSTOM_EX_KEY, []);
+        try {
+          for (const w of localWorkouts) {
+            await sb.from('workouts').upsert({
+              id: w.id, user_id: user.id, date: w.date, name: w.name, exercises: w.exercises,
+            });
+          }
+          if (localExercises.length > 0) {
+            await sb.from('custom_exercises').upsert({ user_id: user.id, names: localExercises });
+          }
+          localStorage.removeItem(WORKOUTS_KEY);
+          localStorage.removeItem(CUSTOM_EX_KEY);
+        } catch (err) {
+          console.error('Migrace selhala:', err);
+        }
+        setStatus('done');
+        setTimeout(onDone, 800);
+      };
+
+      const skip = () => {
+        localStorage.removeItem(WORKOUTS_KEY);
+        localStorage.removeItem(CUSTOM_EX_KEY);
+        onDone();
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-7 max-w-sm w-full shadow-2xl">
+            {status === 'done' ? (
+              <div className="text-center">
+                <div className="text-4xl mb-3">✅</div>
+                <p className="font-semibold text-gray-900">Data přenesena!</p>
+              </div>
+            ) : status === 'running' ? (
+              <div className="text-center">
+                <div className="w-10 h-10 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-sm text-gray-500">Přenáším data do cloudu...</p>
+              </div>
+            ) : (
+              <>
+                <div className="text-3xl mb-4">☁️</div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Máš lokální data</h3>
+                <p className="text-sm text-gray-500 mb-5">
+                  Našli jsme tréninky uložené v tomto prohlížeči. Chceš je přenést do cloudu, kde budou dostupné ze všech zařízení?
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={skip}
+                    className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+                    Zahodit
+                  </button>
+                  <button onClick={migrate}
+                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-colors">
+                    Přenést do cloudu
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     // ─── App (Router) ─────────────────────────────────────────────────────────
     function App() {
-      const [workouts, setWorkouts] = useState(() => load(WORKOUTS_KEY, []));
-      const [customExercises, setCustomExercises] = useState(() => load(CUSTOM_EX_KEY, []));
+      const [workouts, setWorkouts]               = useState([]);
+      const [customExercises, setCustomExercises] = useState([]);
+      const [view, setView]     = useState({ type: 'dashboard' });
+      const [user, setUser]     = useState(null);
+      const [appState, setAppState] = useState('loading'); // loading | auth | migrating | ready
+      const userRef = useRef(null);
 
-      // view: { type: 'dashboard' | 'new-workout' | 'workout-detail' | 'exercise-detail', params }
-      const [view, setView] = useState({ type: 'dashboard' });
+      // ── Supabase data helpers ──────────────────────────────────────────────
+      const loadData = async (uid) => {
+        try {
+          const [wRes, ceRes] = await Promise.all([
+            sb.from('workouts').select('id,date,name,exercises').eq('user_id', uid).order('date', { ascending: false }),
+            sb.from('custom_exercises').select('names').eq('user_id', uid).maybeSingle(),
+          ]);
+          if (wRes.error) throw wRes.error;
+          setWorkouts((wRes.data || []).map(r => ({ id: r.id, date: r.date, name: r.name, exercises: r.exercises })));
+          setCustomExercises(ceRes.data?.names || []);
+        } catch (err) {
+          console.error('Chyba načítání:', err);
+        }
+        setAppState('ready');
+      };
 
-      useEffect(() => { store(WORKOUTS_KEY, workouts); }, [workouts]);
-      useEffect(() => { store(CUSTOM_EX_KEY, customExercises); }, [customExercises]);
+      // ── Auth bootstrap ─────────────────────────────────────────────────────
+      useEffect(() => {
+        sb.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user) {
+            userRef.current = session.user;
+            setUser(session.user);
+            load(WORKOUTS_KEY, []).length > 0 ? setAppState('migrating') : loadData(session.user.id);
+          } else {
+            setAppState('auth');
+          }
+        });
 
+        const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
+          if (event === 'SIGNED_IN' && session?.user) {
+            userRef.current = session.user;
+            setUser(session.user);
+            load(WORKOUTS_KEY, []).length > 0 ? setAppState('migrating') : loadData(session.user.id);
+          } else if (event === 'SIGNED_OUT') {
+            userRef.current = null;
+            setUser(null); setWorkouts([]); setCustomExercises([]);
+            setAppState('auth');
+          }
+        });
+        return () => subscription.unsubscribe();
+      }, []);
+
+      // ── Data operations ────────────────────────────────────────────────────
       const allExercises = useMemo(() => {
         const names = new Set(DEFAULT_EXERCISES.map(e => e.name));
         const custom = customExercises
@@ -1005,42 +1206,65 @@
         return [...DEFAULT_EXERCISES, ...custom];
       }, [customExercises]);
 
-      const addCustomExercise = useCallback((name) => {
-        setCustomExercises(prev =>
-          prev.includes(name) ? prev : [...prev, name]
-        );
+      const addCustomExercise = useCallback(async (name) => {
+        setCustomExercises(prev => {
+          if (prev.includes(name)) return prev;
+          const next = [...prev, name];
+          const uid = userRef.current?.id;
+          if (uid) sb.from('custom_exercises').upsert({ user_id: uid, names: next });
+          return next;
+        });
       }, []);
 
-      const saveWorkout = (workout) => {
-        setWorkouts(prev => [...prev, workout]);
+      const saveWorkout = async (workout) => {
+        const uid = userRef.current?.id;
+        if (uid) {
+          const { error } = await sb.from('workouts').insert({
+            id: workout.id, user_id: uid,
+            date: workout.date, name: workout.name, exercises: workout.exercises,
+          });
+          if (error) { console.error('Uložení selhalo:', error); return; }
+        }
+        setWorkouts(prev => [workout, ...prev]);
         setView({ type: 'dashboard' });
       };
 
-      const deleteWorkout = (id) => {
+      const deleteWorkout = async (id) => {
+        const uid = userRef.current?.id;
+        if (uid) await sb.from('workouts').delete().eq('id', id).eq('user_id', uid);
         setWorkouts(prev => prev.filter(w => w.id !== id));
       };
 
-      if (view.type === 'dashboard') {
-        return (
-          <Dashboard
-            workouts={workouts}
-            onNewWorkout={() => setView({ type: 'new-workout' })}
-            onOpenWorkout={(id) => setView({ type: 'workout-detail', workoutId: id })}
-            onOpenExercise={(name) => setView({ type: 'exercise-detail', exerciseName: name })}
-          />
-        );
-      }
+      const handleLogout = async () => {
+        await sb.auth.signOut();
+      };
 
-      if (view.type === 'new-workout') {
-        return (
-          <NewWorkout
-            allExercises={allExercises}
-            onSave={saveWorkout}
-            onBack={() => setView({ type: 'dashboard' })}
-            addCustomExercise={addCustomExercise}
-          />
-        );
-      }
+      // ── Render states ──────────────────────────────────────────────────────
+      if (appState === 'loading')   return <LoadingScreen />;
+      if (appState === 'auth')      return <AuthScreen />;
+      if (appState === 'migrating') return (
+        <MigrationModal user={user} onDone={() => loadData(user.id)} />
+      );
+
+      if (view.type === 'dashboard') return (
+        <Dashboard
+          workouts={workouts}
+          user={user}
+          onLogout={handleLogout}
+          onNewWorkout={() => setView({ type: 'new-workout' })}
+          onOpenWorkout={(id) => setView({ type: 'workout-detail', workoutId: id })}
+          onOpenExercise={(name) => setView({ type: 'exercise-detail', exerciseName: name })}
+        />
+      );
+
+      if (view.type === 'new-workout') return (
+        <NewWorkout
+          allExercises={allExercises}
+          onSave={saveWorkout}
+          onBack={() => setView({ type: 'dashboard' })}
+          addCustomExercise={addCustomExercise}
+        />
+      );
 
       if (view.type === 'workout-detail') {
         const workout = workouts.find(w => w.id === view.workoutId);
@@ -1055,15 +1279,13 @@
         );
       }
 
-      if (view.type === 'exercise-detail') {
-        return (
-          <ExerciseDetail
-            exerciseName={view.exerciseName}
-            workouts={workouts}
-            onBack={() => setView({ type: 'dashboard' })}
-          />
-        );
-      }
+      if (view.type === 'exercise-detail') return (
+        <ExerciseDetail
+          exerciseName={view.exerciseName}
+          workouts={workouts}
+          onBack={() => setView({ type: 'dashboard' })}
+        />
+      );
 
       return null;
     }
