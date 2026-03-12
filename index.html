@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GymLog</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, -apple-system, sans-serif; }
+    input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+    .autocomplete-list { z-index: 100; }
+  </style>
+  <script>
+    tailwind.config = {
+      theme: { extend: { colors: { primary: '#4F46E5' } } }
+    }
+  </script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+    // ─── Constants ────────────────────────────────────────────────────────────
+    const WORKOUTS_KEY = 'gymlog_workouts';
+    const CUSTOM_EX_KEY = 'gymlog_custom_exercises';
+
+    const DEFAULT_EXERCISES = [
+      { id:'e01', name:'Bench Press',             category:'Hruď',    cardio:false },
+      { id:'e02', name:'Incline Bench Press',      category:'Hruď',    cardio:false },
+      { id:'e03', name:'Kabelové překřížení',      category:'Hruď',    cardio:false },
+      { id:'e04', name:'Dips',                     category:'Hruď',    cardio:false },
+      { id:'e05', name:'Push-up',                  category:'Hruď',    cardio:false },
+      { id:'e06', name:'Mrtvý tah',                category:'Záda',    cardio:false },
+      { id:'e07', name:'Přítahy na hrazdě',        category:'Záda',    cardio:false },
+      { id:'e08', name:'Veslování',                category:'Záda',    cardio:false },
+      { id:'e09', name:'Lat Pulldown',             category:'Záda',    cardio:false },
+      { id:'e10', name:'Seated Row',               category:'Záda',    cardio:false },
+      { id:'e11', name:'Dřep',                     category:'Nohy',    cardio:false },
+      { id:'e12', name:'Leg Press',                category:'Nohy',    cardio:false },
+      { id:'e13', name:'Rumunský mrtvý tah',       category:'Nohy',    cardio:false },
+      { id:'e14', name:'Leg Curl',                 category:'Nohy',    cardio:false },
+      { id:'e15', name:'Leg Extension',            category:'Nohy',    cardio:false },
+      { id:'e16', name:'Výpady',                   category:'Nohy',    cardio:false },
+      { id:'e17', name:'Overhead Press',           category:'Ramena',  cardio:false },
+      { id:'e18', name:'Boční zdvihy',             category:'Ramena',  cardio:false },
+      { id:'e19', name:'Přední zdvihy',            category:'Ramena',  cardio:false },
+      { id:'e20', name:'Face Pull',                category:'Ramena',  cardio:false },
+      { id:'e21', name:'Arnold Press',             category:'Ramena',  cardio:false },
+      { id:'e22', name:'Bicepsový zdvih s činkou', category:'Biceps',  cardio:false },
+      { id:'e23', name:'Kladivový zdvih',          category:'Biceps',  cardio:false },
+      { id:'e24', name:'Koncentrický zdvih',       category:'Biceps',  cardio:false },
+      { id:'e25', name:'Preacher Curl',            category:'Biceps',  cardio:false },
+      { id:'e26', name:'Tricepsový pushdown',      category:'Triceps', cardio:false },
+      { id:'e27', name:'Skull Crusher',            category:'Triceps', cardio:false },
+      { id:'e28', name:'Tricepsové kliky',         category:'Triceps', cardio:false },
+      { id:'e29', name:'French Press',             category:'Triceps', cardio:false },
+      { id:'e30', name:'Plank',                    category:'Břicho',  cardio:false },
+      { id:'e31', name:'Crunch',                   category:'Břicho',  cardio:false },
+      { id:'e32', name:'Leg Raise',                category:'Břicho',  cardio:false },
+      { id:'e33', name:'Ab Wheel',                 category:'Břicho',  cardio:false },
+      { id:'e34', name:'Russian Twist',            category:'Břicho',  cardio:false },
+      { id:'e35', name:'Běh',                      category:'Kardio',  cardio:true  },
+      { id:'e36', name:'Veslařský trenažér',       category:'Kardio',  cardio:true  },
+      { id:'e37', name:'Spinning',                 category:'Kardio',  cardio:true  },
+      { id:'e38', name:'Eliptický trenažér',       category:'Kardio',  cardio:true  },
+      { id:'e39', name:'Skipping',                 category:'Kardio',  cardio:true  },
+      { id:'e40', name:'Chůze',                    category:'Kardio',  cardio:true  },
+    ];
+
+    // ─── Storage helpers ──────────────────────────────────────────────────────
+    const load  = (key, def) => { try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; } };
+    const store = (key, val) => localStorage.setItem(key, JSON.stringify(val));
+    const uid   = () => Math.random().toString(36).slice(2, 11);
+
+    // ─── Date helpers ─────────────────────────────────────────────────────────
+    function getMondayOfWeek(date = new Date()) {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+
+    function formatDate(iso) {
+      return new Date(iso).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    function formatShortDate(iso) {
+      return new Date(iso).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'short' });
+    }
+
+    // ─── Simple SVG Line Chart ────────────────────────────────────────────────
+    function LineChart({ data, unit = 'kg' }) {
+      // data: [{ label: string, value: number }]
+      if (!data || data.length < 2) return null;
+
+      const W = 500, H = 200;
+      const pad = { top: 16, right: 16, bottom: 40, left: 48 };
+      const cw = W - pad.left - pad.right;
+      const ch = H - pad.top - pad.bottom;
+
+      const vals = data.map(d => d.value);
+      const minV = Math.min(...vals);
+      const maxV = Math.max(...vals);
+      const range = maxV - minV || 1;
+
+      const px = (i) => pad.left + (i / (data.length - 1)) * cw;
+      const py = (v) => pad.top + ch - ((v - minV) / range) * ch;
+
+      const polyPoints = data.map((d, i) => `${px(i)},${py(d.value)}`).join(' ');
+
+      // Y-axis ticks
+      const yTicks = [minV, minV + range * 0.5, maxV].map(v => Math.round(v * 2) / 2);
+
+      // X-axis ticks: show at most 6
+      const step = Math.max(1, Math.floor(data.length / 6));
+      const xTickIdxs = data.map((_, i) => i).filter(i => i % step === 0 || i === data.length - 1);
+
+      return (
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 220 }}>
+          {/* Grid */}
+          {yTicks.map((v, i) => (
+            <line key={i}
+              x1={pad.left} y1={py(v)} x2={pad.left + cw} y2={py(v)}
+              stroke="#e5e7eb" strokeWidth="1"
+            />
+          ))}
+          {/* Y labels */}
+          {yTicks.map((v, i) => (
+            <text key={i} x={pad.left - 6} y={py(v) + 4}
+              textAnchor="end" fontSize="11" fill="#9ca3af">{v} {unit}</text>
+          ))}
+          {/* X labels */}
+          {xTickIdxs.map(i => (
+            <text key={i} x={px(i)} y={H - 6}
+              textAnchor="middle" fontSize="11" fill="#9ca3af">{data[i].label}</text>
+          ))}
+          {/* Area fill */}
+          <polygon
+            points={`${pad.left},${py(minV)} ${polyPoints} ${pad.left + cw},${py(minV)}`}
+            fill="#4F46E5" fillOpacity="0.08"
+          />
+          {/* Line */}
+          <polyline fill="none" stroke="#4F46E5" strokeWidth="2.5"
+            strokeLinejoin="round" strokeLinecap="round" points={polyPoints} />
+          {/* Dots + PR dot */}
+          {data.map((d, i) => {
+            const isPR = d.value === maxV;
+            return (
+              <circle key={i} cx={px(i)} cy={py(d.value)} r={isPR ? 6 : 4}
+                fill={isPR ? '#4F46E5' : 'white'} stroke="#4F46E5" strokeWidth="2" />
+            );
+          })}
+        </svg>
+      );
+    }
+
+    // ─── Exercise Autocomplete ────────────────────────────────────────────────
+    function ExerciseAutocomplete({ value, onChange, allExercises }) {
+      const [open, setOpen] = useState(false);
+      const [query, setQuery] = useState(value || '');
+      const ref = useRef(null);
+
+      useEffect(() => { setQuery(value || ''); }, [value]);
+
+      useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+      }, []);
+
+      const filtered = useMemo(() => {
+        if (!query.trim()) return [];
+        const q = query.toLowerCase();
+        return allExercises.filter(e => e.name.toLowerCase().includes(q)).slice(0, 8);
+      }, [query, allExercises]);
+
+      const select = (name) => {
+        setQuery(name);
+        onChange(name);
+        setOpen(false);
+      };
+
+      const handleChange = (e) => {
+        setQuery(e.target.value);
+        onChange(e.target.value);
+        setOpen(true);
+      };
+
+      return (
+        <div ref={ref} className="relative">
+          <input
+            type="text"
+            value={query}
+            onChange={handleChange}
+            onFocus={() => query && setOpen(true)}
+            placeholder="Název cviku..."
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          {open && filtered.length > 0 && (
+            <ul className="autocomplete-list absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+              {filtered.map(ex => (
+                <li key={ex.id} onMouseDown={() => select(ex.name)}
+                  className="px-3 py-2 text-sm hover:bg-indigo-50 cursor-pointer flex justify-between items-center">
+                  <span>{ex.name}</span>
+                  <span className="text-xs text-gray-400 ml-2">{ex.category}</span>
+                </li>
+              ))}
+              {!filtered.some(e => e.name.toLowerCase() === query.toLowerCase()) && (
+                <li onMouseDown={() => select(query)}
+                  className="px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 cursor-pointer border-t border-gray-100">
+                  + Přidat vlastní: „{query}"
+                </li>
+              )}
+            </ul>
+          )}
+          {open && filtered.length === 0 && query.trim() && (
+            <div className="autocomplete-list absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1">
+              <div className="px-3 py-2 text-sm text-gray-400">Cvik nenalezen –
+                <span className="text-indigo-600 cursor-pointer ml-1" onMouseDown={() => select(query)}>
+                  přidej vlastní
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Dashboard ────────────────────────────────────────────────────────────
+    function Dashboard({ workouts, onNewWorkout, onOpenWorkout, onOpenExercise }) {
+      const now = new Date();
+      const monday = getMondayOfWeek(now);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const weekWorkouts  = workouts.filter(w => new Date(w.date) >= monday);
+      const monthWorkouts = workouts.filter(w => new Date(w.date) >= monthStart);
+
+      const totalSets = (ws) => ws.reduce((s, w) => s + w.exercises.reduce((a, e) => a + e.sets.length, 0), 0);
+      const totalKg   = (ws) => ws.reduce((s, w) =>
+        s + w.exercises.reduce((a, e) =>
+          a + e.sets.reduce((b, set) => b + (set.weight && set.reps ? set.weight * set.reps : 0), 0), 0), 0);
+
+      // Mini calendar – current month
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const firstDay    = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
+      const firstDayISO = firstDay === 0 ? 6 : firstDay - 1;
+      const trainedDays = new Set(
+        workouts
+          .filter(w => new Date(w.date) >= monthStart)
+          .map(w => new Date(w.date).getDate())
+      );
+
+      const monthName = now.toLocaleDateString('cs-CZ', { month: 'long', year: 'numeric' });
+
+      return (
+        <div className="max-w-2xl mx-auto px-4 py-6">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">GymLog</h1>
+              <p className="text-sm text-gray-500">{now.toLocaleDateString('cs-CZ', { weekday:'long', day:'numeric', month:'long' })}</p>
+            </div>
+            <button onClick={onNewWorkout}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-colors">
+              + Nový trénink
+            </button>
+          </div>
+
+          {/* Stats cards */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Tento týden</p>
+              <p className="text-3xl font-bold text-indigo-600">{weekWorkouts.length}</p>
+              <p className="text-sm text-gray-500">{weekWorkouts.length === 1 ? 'trénink' : weekWorkouts.length < 5 ? 'tréninky' : 'tréninků'}</p>
+              <p className="text-xs text-gray-400 mt-1">{totalSets(weekWorkouts)} sérií · {Math.round(totalKg(weekWorkouts))} kg</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Tento měsíc</p>
+              <p className="text-3xl font-bold text-indigo-600">{monthWorkouts.length}</p>
+              <p className="text-sm text-gray-500">{monthWorkouts.length === 1 ? 'trénink' : monthWorkouts.length < 5 ? 'tréninky' : 'tréninků'}</p>
+              <p className="text-xs text-gray-400 mt-1">{totalSets(monthWorkouts)} sérií · {Math.round(totalKg(monthWorkouts))} kg</p>
+            </div>
+          </div>
+
+          {/* Calendar */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6">
+            <p className="text-sm font-medium text-gray-700 mb-3 capitalize">{monthName}</p>
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {['Po','Út','St','Čt','Pá','So','Ne'].map(d =>
+                <div key={d} className="text-xs text-gray-400 pb-1">{d}</div>
+              )}
+              {Array.from({length: firstDayISO}).map((_, i) => <div key={'e'+i} />)}
+              {Array.from({length: daysInMonth}).map((_, i) => {
+                const day = i + 1;
+                const isToday = day === now.getDate();
+                const trained = trainedDays.has(day);
+                return (
+                  <div key={day} className={`
+                    aspect-square flex items-center justify-center rounded-full text-xs font-medium
+                    ${trained ? 'bg-indigo-600 text-white' : ''}
+                    ${isToday && !trained ? 'ring-2 ring-indigo-400 text-indigo-600' : ''}
+                    ${!trained && !isToday ? 'text-gray-500' : ''}
+                  `}>{day}</div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Workout list */}
+          {workouts.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="text-5xl mb-4">🏋️</div>
+              <h2 className="text-lg font-semibold text-gray-700 mb-2">Zaznamenej svůj první trénink</h2>
+              <p className="text-sm text-gray-400 mb-6">Sleduj svůj pokrok a osobní rekordy</p>
+              <button onClick={onNewWorkout}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl text-sm font-semibold transition-colors">
+                Začít
+              </button>
+            </div>
+          ) : (
+            <div>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Tréninky</h2>
+              <div className="space-y-2">
+                {[...workouts].sort((a, b) => new Date(b.date) - new Date(a.date)).map(w => (
+                  <div key={w.id} onClick={() => onOpenWorkout(w.id)}
+                    className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 cursor-pointer hover:border-indigo-200 hover:shadow-md transition-all">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">
+                          {w.name || formatDate(w.date)}
+                        </p>
+                        {w.name && <p className="text-xs text-gray-400">{formatDate(w.date)}</p>}
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {w.exercises.length} {w.exercises.length === 1 ? 'cvik' : w.exercises.length < 5 ? 'cviky' : 'cviků'} ·{' '}
+                          {w.exercises.reduce((s, e) => s + e.sets.length, 0)} sérií
+                        </p>
+                      </div>
+                      <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── New Workout ──────────────────────────────────────────────────────────
+    function NewWorkout({ allExercises, onSave, onBack, addCustomExercise }) {
+      const [exercises, setExercises] = useState([]);
+      const [workoutName, setWorkoutName] = useState('');
+
+      const addExercise = () => {
+        setExercises(prev => [...prev, { id: uid(), name: '', sets: [] }]);
+      };
+
+      const updateExerciseName = (exId, name) => {
+        // If it's a custom exercise not in library, add it
+        if (name && !allExercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
+          addCustomExercise(name);
+        }
+        setExercises(prev => prev.map(e => e.id === exId ? { ...e, name } : e));
+      };
+
+      const addSet = (exId) => {
+        setExercises(prev => prev.map(e =>
+          e.id === exId ? { ...e, sets: [...e.sets, { id: uid(), weight: '', reps: '', time: '', kcal: '', distance: '', order: e.sets.length }] } : e
+        ));
+      };
+
+      const updateSet = (exId, setId, field, val) => {
+        setExercises(prev => prev.map(e =>
+          e.id === exId ? {
+            ...e,
+            sets: e.sets.map(s => s.id === setId ? { ...s, [field]: val } : s)
+          } : e
+        ));
+      };
+
+      const removeSet = (exId, setId) => {
+        setExercises(prev => prev.map(e =>
+          e.id === exId ? { ...e, sets: e.sets.filter(s => s.id !== setId) } : e
+        ));
+      };
+
+      const removeExercise = (exId) => {
+        setExercises(prev => prev.filter(e => e.id !== exId));
+      };
+
+      const [errors, setErrors] = useState({});
+
+      const validate = () => {
+        const errs = {};
+        exercises.forEach(ex => {
+          if (!ex.name.trim()) { errs[ex.id + '_name'] = 'Zadej název cviku'; }
+          if (ex.sets.length === 0) { errs[ex.id + '_sets'] = 'Přidej alespoň jednu sérii'; }
+          const cardio = isCardio(ex.name);
+          const running = isRunning(ex.name);
+          ex.sets.forEach(s => {
+            if (!cardio) {
+              const w = parseFloat(s.weight);
+              const r = parseInt(s.reps);
+              if (s.weight !== '' && (isNaN(w) || w < 0 || w > 999.5)) errs[s.id + '_weight'] = 'Váha 0–999,5 kg';
+              if (s.reps   !== '' && (isNaN(r) || r < 1 || r > 999))   errs[s.id + '_reps']   = 'Opakování 1–999';
+            } else {
+              const t = parseFloat(s.time);
+              const k = parseInt(s.kcal);
+              const d = parseFloat(s.distance);
+              if (s.time !== '' && (isNaN(t) || t <= 0))                 errs[s.id + '_time']     = 'Čas musí být kladný';
+              if (s.kcal !== '' && (isNaN(k) || k <= 0))                 errs[s.id + '_kcal']     = 'Kcal musí být kladné';
+              if (running && s.distance !== '' && (isNaN(d) || d <= 0))  errs[s.id + '_distance'] = 'Vzdálenost musí být kladná';
+            }
+          });
+        });
+        setErrors(errs);
+        return Object.keys(errs).length === 0;
+      };
+
+      const handleSave = () => {
+        if (exercises.length === 0) { alert('Přidej alespoň jeden cvik.'); return; }
+        if (!validate()) return;
+
+        const workout = {
+          id: uid(),
+          date: new Date().toISOString(),
+          name: workoutName.trim() || null,
+          exercises: exercises.filter(e => e.name.trim()).map((ex, i) => ({
+            id: ex.id,
+            name: ex.name.trim(),
+            order: i,
+            sets: ex.sets.map((s, j) => ({
+              id: s.id,
+              weight:   s.weight   !== '' ? parseFloat(s.weight)   : null,
+              reps:     s.reps     !== '' ? parseInt(s.reps)       : null,
+              time:     s.time     !== '' ? parseFloat(s.time)     : null,
+              kcal:     s.kcal     !== '' ? parseInt(s.kcal)       : null,
+              distance: s.distance !== '' ? parseFloat(s.distance) : null,
+              order: j,
+            }))
+          }))
+        };
+        onSave(workout);
+      };
+
+      const isCardio = (name) => {
+        const ex = allExercises.find(e => e.name.toLowerCase() === name.toLowerCase());
+        return ex?.cardio || false;
+      };
+
+      const isRunning = (name) => name.toLowerCase().includes('běh') || name.toLowerCase().includes('run');
+
+      return (
+        <div className="max-w-2xl mx-auto px-4 py-6">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-6">
+            <button onClick={onBack}
+              className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Nový trénink</h1>
+              <p className="text-xs text-gray-400">{new Date().toLocaleDateString('cs-CZ', { weekday:'long', day:'numeric', month:'long' })}</p>
+            </div>
+          </div>
+
+          {/* Optional workout name */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-4">
+            <input
+              type="text"
+              value={workoutName}
+              onChange={e => setWorkoutName(e.target.value)}
+              placeholder="Název tréninku (volitelné)..."
+              className="w-full text-sm text-gray-700 focus:outline-none placeholder-gray-300"
+            />
+          </div>
+
+          {/* Exercises */}
+          <div className="space-y-4">
+            {exercises.map((ex, exIdx) => (
+              <div key={ex.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                {/* Exercise header */}
+                <div className="p-4 border-b border-gray-50">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <ExerciseAutocomplete
+                        value={ex.name}
+                        onChange={(name) => updateExerciseName(ex.id, name)}
+                        allExercises={allExercises}
+                      />
+                      {errors[ex.id + '_name'] && <p className="text-red-500 text-xs mt-1">{errors[ex.id + '_name']}</p>}
+                    </div>
+                    <button onClick={() => removeExercise(ex.id)}
+                      className="p-2 text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sets */}
+                <div className="px-4 py-2">
+                  {ex.sets.length > 0 && (
+                    <div className="mb-2">
+                      {/* Column headers */}
+                      {!isCardio(ex.name) ? (
+                        <div className="grid grid-cols-12 gap-2 px-2 mb-1">
+                          <p className="col-span-1 text-xs text-gray-400 text-center">#</p>
+                          <p className="col-span-5 text-xs text-gray-400">Váha (kg)</p>
+                          <p className="col-span-5 text-xs text-gray-400">Opakování</p>
+                          <div className="col-span-1" />
+                        </div>
+                      ) : isRunning(ex.name) ? (
+                        <div className="grid grid-cols-12 gap-2 px-2 mb-1">
+                          <p className="col-span-1 text-xs text-gray-400 text-center">#</p>
+                          <p className="col-span-3 text-xs text-gray-400">Čas (min)</p>
+                          <p className="col-span-3 text-xs text-gray-400">Km</p>
+                          <p className="col-span-4 text-xs text-gray-400">Kcal</p>
+                          <div className="col-span-1" />
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-12 gap-2 px-2 mb-1">
+                          <p className="col-span-1 text-xs text-gray-400 text-center">#</p>
+                          <p className="col-span-5 text-xs text-gray-400">Čas (min)</p>
+                          <p className="col-span-5 text-xs text-gray-400">Kcal</p>
+                          <div className="col-span-1" />
+                        </div>
+                      )}
+
+                      {ex.sets.map((set, setIdx) => (
+                        <div key={set.id} className="grid grid-cols-12 gap-2 items-start px-2 mb-2">
+                          <span className="col-span-1 text-xs text-gray-400 text-center font-medium pt-2.5">{setIdx + 1}</span>
+
+                          {!isCardio(ex.name) ? (
+                            <>
+                              <div className="col-span-5">
+                                <input type="number" inputMode="decimal" step="0.5" min="0" max="999.5"
+                                  value={set.weight} onChange={e => updateSet(ex.id, set.id, 'weight', e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors[set.id+'_weight'] ? 'border-red-400' : 'border-gray-200'}`}
+                                />
+                                {errors[set.id+'_weight'] && <p className="text-red-500 text-xs mt-0.5">{errors[set.id+'_weight']}</p>}
+                              </div>
+                              <div className="col-span-5">
+                                <input type="number" inputMode="numeric" min="1" max="999"
+                                  value={set.reps} onChange={e => updateSet(ex.id, set.id, 'reps', e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors[set.id+'_reps'] ? 'border-red-400' : 'border-gray-200'}`}
+                                />
+                                {errors[set.id+'_reps'] && <p className="text-red-500 text-xs mt-0.5">{errors[set.id+'_reps']}</p>}
+                              </div>
+                            </>
+                          ) : isRunning(ex.name) ? (
+                            <>
+                              <div className="col-span-3">
+                                <input type="number" inputMode="decimal" step="0.5" min="0"
+                                  value={set.time} onChange={e => updateSet(ex.id, set.id, 'time', e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors[set.id+'_time'] ? 'border-red-400' : 'border-gray-200'}`}
+                                />
+                                {errors[set.id+'_time'] && <p className="text-red-500 text-xs mt-0.5">{errors[set.id+'_time']}</p>}
+                              </div>
+                              <div className="col-span-3">
+                                <input type="number" inputMode="decimal" step="0.1" min="0"
+                                  value={set.distance} onChange={e => updateSet(ex.id, set.id, 'distance', e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors[set.id+'_distance'] ? 'border-red-400' : 'border-gray-200'}`}
+                                />
+                                {errors[set.id+'_distance'] && <p className="text-red-500 text-xs mt-0.5">{errors[set.id+'_distance']}</p>}
+                              </div>
+                              <div className="col-span-4">
+                                <input type="number" inputMode="numeric" min="0"
+                                  value={set.kcal} onChange={e => updateSet(ex.id, set.id, 'kcal', e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors[set.id+'_kcal'] ? 'border-red-400' : 'border-gray-200'}`}
+                                />
+                                {errors[set.id+'_kcal'] && <p className="text-red-500 text-xs mt-0.5">{errors[set.id+'_kcal']}</p>}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="col-span-5">
+                                <input type="number" inputMode="decimal" step="0.5" min="0"
+                                  value={set.time} onChange={e => updateSet(ex.id, set.id, 'time', e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors[set.id+'_time'] ? 'border-red-400' : 'border-gray-200'}`}
+                                />
+                                {errors[set.id+'_time'] && <p className="text-red-500 text-xs mt-0.5">{errors[set.id+'_time']}</p>}
+                              </div>
+                              <div className="col-span-5">
+                                <input type="number" inputMode="numeric" min="0"
+                                  value={set.kcal} onChange={e => updateSet(ex.id, set.id, 'kcal', e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors[set.id+'_kcal'] ? 'border-red-400' : 'border-gray-200'}`}
+                                />
+                                {errors[set.id+'_kcal'] && <p className="text-red-500 text-xs mt-0.5">{errors[set.id+'_kcal']}</p>}
+                              </div>
+                            </>
+                          )}
+
+                          <button onClick={() => removeSet(ex.id, set.id)}
+                            className="col-span-1 text-gray-300 hover:text-red-400 transition-colors flex justify-center pt-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {errors[ex.id + '_sets'] && <p className="text-red-500 text-xs mb-2 px-2">{errors[ex.id + '_sets']}</p>}
+
+                  <button onClick={() => addSet(ex.id)}
+                    className="w-full py-2.5 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-xl transition-colors font-medium">
+                    + Přidat sérii
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add exercise */}
+          <button onClick={addExercise}
+            className="w-full mt-4 py-3.5 border-2 border-dashed border-gray-200 hover:border-indigo-300 text-gray-400 hover:text-indigo-500 rounded-2xl text-sm font-medium transition-colors">
+            + Přidat cvik
+          </button>
+
+          {/* Save */}
+          <button onClick={handleSave}
+            className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl text-base font-semibold shadow-md transition-colors">
+            Dokončit trénink
+          </button>
+        </div>
+      );
+    }
+
+    // ─── Workout Detail ───────────────────────────────────────────────────────
+    function WorkoutDetail({ workout, onBack, onDelete, onOpenExercise }) {
+      const [confirmDelete, setConfirmDelete] = useState(false);
+
+      return (
+        <div className="max-w-2xl mx-auto px-4 py-6">
+          <div className="flex items-center gap-3 mb-6">
+            <button onClick={onBack}
+              className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div className="flex-1">
+              <h1 className="text-xl font-bold text-gray-900">
+                {workout.name || 'Detail tréninku'}
+              </h1>
+              <p className="text-xs text-gray-400">{formatDate(workout.date)}</p>
+            </div>
+            <button onClick={() => setConfirmDelete(true)}
+              className="p-2 text-gray-300 hover:text-red-400 transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Confirm delete dialog */}
+          {confirmDelete && (
+            <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 px-4">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Smazat trénink?</h3>
+                <p className="text-sm text-gray-500 mb-5">Tato akce je nevratná. Data budou trvale odstraněna.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmDelete(false)}
+                    className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                    Zrušit
+                  </button>
+                  <button onClick={() => { onDelete(workout.id); onBack(); }}
+                    className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-semibold transition-colors">
+                    Smazat
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Summary */}
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 text-center">
+              <p className="text-2xl font-bold text-indigo-600">{workout.exercises.length}</p>
+              <p className="text-xs text-gray-400">cviků</p>
+            </div>
+            <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 text-center">
+              <p className="text-2xl font-bold text-indigo-600">
+                {workout.exercises.reduce((s, e) => s + e.sets.length, 0)}
+              </p>
+              <p className="text-xs text-gray-400">sérií</p>
+            </div>
+            <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 text-center">
+              <p className="text-2xl font-bold text-indigo-600">
+                {Math.round(workout.exercises.reduce((s, e) =>
+                  s + e.sets.reduce((a, set) => a + (set.weight && set.reps ? set.weight * set.reps : 0), 0), 0))}
+              </p>
+              <p className="text-xs text-gray-400">kg celkem</p>
+            </div>
+          </div>
+
+          {/* Exercise list */}
+          <div className="space-y-3">
+            {workout.exercises.map(ex => (
+              <div key={ex.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <button
+                  onClick={() => onOpenExercise(ex.name)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left">
+                  <span className="font-semibold text-gray-900 text-sm">{ex.name}</span>
+                  <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                <div className="px-4 pb-3">
+                  {(() => {
+                    const isCardioEx = ex.sets.some(s => s.time != null || (s.weight == null && s.reps == null));
+                    const isRunningEx = ex.sets.some(s => s.distance != null);
+                    if (!isCardioEx) return (
+                      <>
+                        <div className="grid grid-cols-3 gap-2 mb-2 px-2">
+                          <p className="text-xs text-gray-400">#</p>
+                          <p className="text-xs text-gray-400">Váha</p>
+                          <p className="text-xs text-gray-400">Opakování</p>
+                        </div>
+                        {ex.sets.map((set, i) => (
+                          <div key={set.id} className="grid grid-cols-3 gap-2 px-2 py-1 rounded-lg hover:bg-gray-50">
+                            <span className="text-sm text-gray-500">{i + 1}</span>
+                            <span className="text-sm font-medium text-gray-800">{set.weight != null ? `${set.weight} kg` : '–'}</span>
+                            <span className="text-sm font-medium text-gray-800">{set.reps != null ? `${set.reps}×` : '–'}</span>
+                          </div>
+                        ))}
+                      </>
+                    );
+                    if (isRunningEx) return (
+                      <>
+                        <div className="grid grid-cols-4 gap-2 mb-2 px-2">
+                          <p className="text-xs text-gray-400">#</p>
+                          <p className="text-xs text-gray-400">Čas</p>
+                          <p className="text-xs text-gray-400">Km</p>
+                          <p className="text-xs text-gray-400">Kcal</p>
+                        </div>
+                        {ex.sets.map((set, i) => (
+                          <div key={set.id} className="grid grid-cols-4 gap-2 px-2 py-1 rounded-lg hover:bg-gray-50">
+                            <span className="text-sm text-gray-500">{i + 1}</span>
+                            <span className="text-sm font-medium text-gray-800">{set.time != null ? `${set.time} min` : '–'}</span>
+                            <span className="text-sm font-medium text-gray-800">{set.distance != null ? `${set.distance} km` : '–'}</span>
+                            <span className="text-sm font-medium text-gray-800">{set.kcal != null ? `${set.kcal} kcal` : '–'}</span>
+                          </div>
+                        ))}
+                      </>
+                    );
+                    return (
+                      <>
+                        <div className="grid grid-cols-3 gap-2 mb-2 px-2">
+                          <p className="text-xs text-gray-400">#</p>
+                          <p className="text-xs text-gray-400">Čas</p>
+                          <p className="text-xs text-gray-400">Kcal</p>
+                        </div>
+                        {ex.sets.map((set, i) => (
+                          <div key={set.id} className="grid grid-cols-3 gap-2 px-2 py-1 rounded-lg hover:bg-gray-50">
+                            <span className="text-sm text-gray-500">{i + 1}</span>
+                            <span className="text-sm font-medium text-gray-800">{set.time != null ? `${set.time} min` : '–'}</span>
+                            <span className="text-sm font-medium text-gray-800">{set.kcal != null ? `${set.kcal} kcal` : '–'}</span>
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Exercise Detail ──────────────────────────────────────────────────────
+    function ExerciseDetail({ exerciseName, workouts, onBack }) {
+      const [range, setRange] = useState('all');
+
+      // Collect all appearances of this exercise across workouts
+      const allEntries = useMemo(() => {
+        const entries = [];
+        workouts.forEach(w => {
+          const ex = w.exercises.find(e => e.name === exerciseName);
+          if (!ex) return;
+          const weights   = ex.sets.map(s => s.weight).filter(v => v != null);
+          const repsList  = ex.sets.map(s => s.reps).filter(v => v != null);
+          const times     = ex.sets.map(s => s.time).filter(v => v != null);
+          const kcals     = ex.sets.map(s => s.kcal).filter(v => v != null);
+          const distances = ex.sets.map(s => s.distance).filter(v => v != null);
+          entries.push({
+            date: w.date,
+            maxWeight:     weights.length   ? Math.max(...weights) : null,
+            avgWeight:     weights.length   ? weights.reduce((a, b) => a + b, 0) / weights.length : null,
+            totalReps:     repsList.length  ? repsList.reduce((a, b) => a + b, 0) : null,
+            totalTime:     times.length     ? times.reduce((a, b) => a + b, 0) : null,
+            totalKcal:     kcals.length     ? kcals.reduce((a, b) => a + b, 0) : null,
+            totalDistance: distances.length ? distances.reduce((a, b) => a + b, 0) : null,
+            sets: ex.sets.length,
+          });
+        });
+        return entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+      }, [exerciseName, workouts]);
+
+      const isCardioEx  = allEntries.some(e => e.totalTime != null);
+      const isRunningEx = allEntries.some(e => e.totalDistance != null);
+
+      const filtered = useMemo(() => {
+        const now = new Date();
+        if (range === '30d') {
+          const cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 30);
+          return allEntries.filter(e => new Date(e.date) >= cutoff);
+        }
+        if (range === '90d') {
+          const cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 90);
+          return allEntries.filter(e => new Date(e.date) >= cutoff);
+        }
+        return allEntries;
+      }, [allEntries, range]);
+
+      const pr = useMemo(() => {
+        if (isRunningEx) {
+          const vals = allEntries.map(e => e.totalDistance).filter(v => v != null);
+          return vals.length ? Math.max(...vals) : null;
+        }
+        if (isCardioEx) {
+          const vals = allEntries.map(e => e.totalTime).filter(v => v != null);
+          return vals.length ? Math.max(...vals) : null;
+        }
+        const vals = allEntries.map(e => e.maxWeight).filter(v => v != null);
+        return vals.length ? Math.max(...vals) : null;
+      }, [allEntries, isCardioEx, isRunningEx]);
+
+      const prLabel = isRunningEx ? 'km' : isCardioEx ? 'min' : 'kg';
+
+      const chartData = isRunningEx
+        ? filtered.filter(e => e.totalDistance != null).map(e => ({ label: formatShortDate(e.date), value: Math.round(e.totalDistance * 10) / 10 }))
+        : isCardioEx
+          ? filtered.filter(e => e.totalTime != null).map(e => ({ label: formatShortDate(e.date), value: Math.round(e.totalTime * 10) / 10 }))
+          : filtered.filter(e => e.maxWeight != null).map(e => ({ label: formatShortDate(e.date), value: e.maxWeight }));
+
+      const chartLabel = isRunningEx ? 'Vzdálenost (km)' : isCardioEx ? 'Čas (min)' : 'Vývoj váhy (max. série)';
+
+      return (
+        <div className="max-w-2xl mx-auto px-4 py-6">
+          <div className="flex items-center gap-3 mb-6">
+            <button onClick={onBack}
+              className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">{exerciseName}</h1>
+              {pr && <p className="text-xs text-gray-400">Osobní rekord: <span className="text-indigo-600 font-semibold">{pr} {prLabel}</span></p>}
+            </div>
+          </div>
+
+          {allEntries.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <p className="text-4xl mb-3">📊</p>
+              <p className="text-sm">Zatím žádné záznamy –<br />přidej cvik do tréninku</p>
+            </div>
+          ) : (
+            <>
+              {/* Range selector */}
+              <div className="flex gap-2 mb-5">
+                {[['all','Vše'],['30d','30 dní'],['90d','90 dní']].map(([val, label]) => (
+                  <button key={val} onClick={() => setRange(val)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${range === val ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 border border-gray-200 hover:border-indigo-300'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Chart */}
+              {chartData.length >= 2 ? (
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-5">
+                  <p className="text-sm font-medium text-gray-700 mb-3">{chartLabel}</p>
+                  <LineChart data={chartData} unit={isRunningEx ? 'km' : isCardioEx ? 'min' : 'kg'} />
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-5 text-center text-sm text-gray-400">
+                  Zaznamenej více tréninků pro zobrazení grafu
+                </div>
+              )}
+
+              {/* History table */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-50">
+                  <p className="text-sm font-semibold text-gray-700">Historie výkonů</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="text-left px-4 py-2.5 text-xs text-gray-400 font-medium">Datum</th>
+                        {!isCardioEx ? (
+                          <>
+                            <th className="text-right px-4 py-2.5 text-xs text-gray-400 font-medium">Max kg</th>
+                            <th className="text-right px-4 py-2.5 text-xs text-gray-400 font-medium">Průměr</th>
+                            <th className="text-right px-4 py-2.5 text-xs text-gray-400 font-medium">Reps</th>
+                          </>
+                        ) : isRunningEx ? (
+                          <>
+                            <th className="text-right px-4 py-2.5 text-xs text-gray-400 font-medium">Čas</th>
+                            <th className="text-right px-4 py-2.5 text-xs text-gray-400 font-medium">Km</th>
+                            <th className="text-right px-4 py-2.5 text-xs text-gray-400 font-medium">Kcal</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="text-right px-4 py-2.5 text-xs text-gray-400 font-medium">Čas</th>
+                            <th className="text-right px-4 py-2.5 text-xs text-gray-400 font-medium">Kcal</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...filtered].reverse().map((entry, i) => {
+                        const prVal = isRunningEx ? entry.totalDistance : isCardioEx ? entry.totalTime : entry.maxWeight;
+                        const isPR = prVal != null && prVal === pr;
+                        return (
+                          <tr key={i} className={`border-t border-gray-50 ${isPR ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
+                            <td className="px-4 py-2.5 text-gray-600">{formatShortDate(entry.date)}</td>
+                            {!isCardioEx ? (
+                              <>
+                                <td className="px-4 py-2.5 text-right font-semibold text-gray-900">
+                                  {entry.maxWeight != null ? `${entry.maxWeight} kg` : '–'}
+                                  {isPR && <span className="ml-1.5 text-xs bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">PR</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-gray-500">
+                                  {entry.avgWeight != null ? `${Math.round(entry.avgWeight * 10) / 10} kg` : '–'}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-gray-500">{entry.totalReps ?? '–'}</td>
+                              </>
+                            ) : isRunningEx ? (
+                              <>
+                                <td className="px-4 py-2.5 text-right text-gray-700">
+                                  {entry.totalTime != null ? `${Math.round(entry.totalTime * 10) / 10} min` : '–'}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-semibold text-gray-900">
+                                  {entry.totalDistance != null ? `${Math.round(entry.totalDistance * 10) / 10} km` : '–'}
+                                  {isPR && <span className="ml-1.5 text-xs bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">PR</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-gray-500">
+                                  {entry.totalKcal != null ? `${entry.totalKcal} kcal` : '–'}
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="px-4 py-2.5 text-right font-semibold text-gray-900">
+                                  {entry.totalTime != null ? `${Math.round(entry.totalTime * 10) / 10} min` : '–'}
+                                  {isPR && <span className="ml-1.5 text-xs bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">PR</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-gray-500">
+                                  {entry.totalKcal != null ? `${entry.totalKcal} kcal` : '–'}
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    // ─── App (Router) ─────────────────────────────────────────────────────────
+    function App() {
+      const [workouts, setWorkouts] = useState(() => load(WORKOUTS_KEY, []));
+      const [customExercises, setCustomExercises] = useState(() => load(CUSTOM_EX_KEY, []));
+
+      // view: { type: 'dashboard' | 'new-workout' | 'workout-detail' | 'exercise-detail', params }
+      const [view, setView] = useState({ type: 'dashboard' });
+
+      useEffect(() => { store(WORKOUTS_KEY, workouts); }, [workouts]);
+      useEffect(() => { store(CUSTOM_EX_KEY, customExercises); }, [customExercises]);
+
+      const allExercises = useMemo(() => {
+        const names = new Set(DEFAULT_EXERCISES.map(e => e.name));
+        const custom = customExercises
+          .filter(name => !names.has(name))
+          .map((name, i) => ({ id: 'custom_' + i, name, category: 'Vlastní', cardio: false }));
+        return [...DEFAULT_EXERCISES, ...custom];
+      }, [customExercises]);
+
+      const addCustomExercise = useCallback((name) => {
+        setCustomExercises(prev =>
+          prev.includes(name) ? prev : [...prev, name]
+        );
+      }, []);
+
+      const saveWorkout = (workout) => {
+        setWorkouts(prev => [...prev, workout]);
+        setView({ type: 'dashboard' });
+      };
+
+      const deleteWorkout = (id) => {
+        setWorkouts(prev => prev.filter(w => w.id !== id));
+      };
+
+      if (view.type === 'dashboard') {
+        return (
+          <Dashboard
+            workouts={workouts}
+            onNewWorkout={() => setView({ type: 'new-workout' })}
+            onOpenWorkout={(id) => setView({ type: 'workout-detail', workoutId: id })}
+            onOpenExercise={(name) => setView({ type: 'exercise-detail', exerciseName: name })}
+          />
+        );
+      }
+
+      if (view.type === 'new-workout') {
+        return (
+          <NewWorkout
+            allExercises={allExercises}
+            onSave={saveWorkout}
+            onBack={() => setView({ type: 'dashboard' })}
+            addCustomExercise={addCustomExercise}
+          />
+        );
+      }
+
+      if (view.type === 'workout-detail') {
+        const workout = workouts.find(w => w.id === view.workoutId);
+        if (!workout) { setView({ type: 'dashboard' }); return null; }
+        return (
+          <WorkoutDetail
+            workout={workout}
+            onBack={() => setView({ type: 'dashboard' })}
+            onDelete={deleteWorkout}
+            onOpenExercise={(name) => setView({ type: 'exercise-detail', exerciseName: name })}
+          />
+        );
+      }
+
+      if (view.type === 'exercise-detail') {
+        return (
+          <ExerciseDetail
+            exerciseName={view.exerciseName}
+            workouts={workouts}
+            onBack={() => setView({ type: 'dashboard' })}
+          />
+        );
+      }
+
+      return null;
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
