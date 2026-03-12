@@ -1,6 +1,6 @@
 # GymLog — Dokumentace prototypu
 
-> Verze dokumentu: 1.0 · Březen 2026
+> Verze dokumentu: 1.2 · Březen 2026
 
 ---
 
@@ -8,7 +8,7 @@
 
 GymLog je webová aplikace pro sledování tréninků v posilovně. Umožňuje rychlý zápis cviků, sérií, vah a opakování přímo ve fitku, zobrazuje historii výkonů a osobní rekordy.
 
-Aplikace běží celá v prohlížeči — nepotřebuje server, backend ani připojení k internetu (po prvním načtení).
+Data jsou uložena v cloudu (Supabase) — přežijí reset telefonu, smazání prohlížeče i přechod na nové zařízení. Přihlášení probíhá bez hesla přes magic link na email. Aplikace je nasazena na Netlify a dostupná z iPhone, Mac i Windows.
 
 ---
 
@@ -25,7 +25,8 @@ Single-page application (SPA) jako jediný HTML soubor — bez build procesu, be
 | JSX transpilace | Babel Standalone | CDN (unpkg.com) |
 | Stylování | Tailwind CSS | CDN (cdn.tailwindcss.com) |
 | Grafy | Vlastní SVG (inline) | — |
-| Ukládání dat | localStorage | Prohlížeč |
+| Autentizace | Supabase Auth (magic link) | CDN (jsdelivr.net) |
+| Databáze | Supabase (PostgreSQL) | API (supabase.co) |
 | Offline podpora | Service Worker | sw.js |
 
 ### Soubory projektu
@@ -41,6 +42,11 @@ my-first-prototype/
 └── WORKLOG.md        # Průběh vývoje a plán dalšího rozvoje
 ```
 
+### Nasazení
+- **GitHub:** `github.com/kgrollova/my-first-prototype` — zdrojový kód
+- **Netlify:** `https://aesthetic-bubblegum-3bb722.netlify.app` — produkce (auto-deploy při každém push na `main`)
+- **Supabase projekt:** `wzxbrguwzlgwjhnqhixi.supabase.co` — databáze + auth
+
 ### Proč jeden HTML soubor?
 Cílem byl rychlý funkční prototyp ("vibecoding"). Jeden soubor znamená nulový setup, okamžité spuštění dvojklikem, snadné sdílení a nasazení kamkoli.
 
@@ -48,7 +54,26 @@ Cílem byl rychlý funkční prototyp ("vibecoding"). Jeden soubor znamená nulo
 
 ## 3. Datový model
 
-Data jsou uložena v `localStorage` ve dvou klíčích:
+Data jsou uložena v Supabase (PostgreSQL) se zapnutým Row Level Security — každý uživatel vidí výhradně svá vlastní data.
+
+### Supabase tabulky
+
+#### `workouts`
+| Sloupec | Typ | Popis |
+|---|---|---|
+| `id` | `text` (PK) | UUID generovaný v klientu |
+| `user_id` | `uuid` | Vazba na `auth.users` |
+| `date` | `timestamptz` | Datum a čas tréninku (ISO 8601) |
+| `name` | `text \| null` | Volitelný název tréninku |
+| `exercises` | `jsonb` | Pole cviků se sériemi (viz níže) |
+
+#### `custom_exercises`
+| Sloupec | Typ | Popis |
+|---|---|---|
+| `user_id` | `uuid` (PK) | Vazba na `auth.users` |
+| `names` | `text[]` | Pole názvů vlastních cviků |
+
+### Struktura `exercises` (JSONB)
 
 ### `gymlog_workouts` — pole tréninků
 
@@ -78,12 +103,6 @@ Data jsou uložena v `localStorage` ve dvou klíčích:
     ]
   }
 ]
-```
-
-### `gymlog_custom_exercises` — pole vlastních cviků
-
-```json
-["Můj vlastní cvik", "Kettlebell swing"]
 ```
 
 ### Datové typy polí série (Set)
@@ -152,7 +171,33 @@ Data jsou uložena v `localStorage` ve dvou klíčích:
 
 ---
 
-## 5. PWA (Progressive Web App)
+## 5. Autentizace (Supabase Auth)
+
+### Přihlašovací flow (Magic Link)
+1. Uživatel zadá email na přihlašovací obrazovce
+2. Supabase pošle email s jednorázovým odkazem (platný 1 hodinu)
+3. Kliknutím na odkaz prohlížeč přesměruje zpět do aplikace s auth tokenem v URL hash
+4. Supabase JS klient token zachytí, vytvoří session a spustí `onAuthStateChange` event
+5. Aplikace načte data z cloudu a zobrazí dashboard
+
+### Správa session
+- Session je uložena v `localStorage` pod klíčem Supabase (`sb-*`) — přežije refresh stránky
+- `onAuthStateChange` poslouchá změny (přihlášení, odhlášení, expiraci)
+- Odhlášení: tlačítko v pravém horním rohu dashboardu (kroužek s iniciálou emailu)
+
+### Migrace z localStorage
+Při prvním přihlášení aplikace detekuje existující data v `localStorage`. Zobrazí dialog s možností:
+- **Přenést do cloudu** — data se importují do Supabase, localStorage se vyčistí
+- **Zahodit** — localStorage se vyčistí, začne se s prázdnou databází
+
+### Supabase konfigurace
+- **Site URL:** `https://aesthetic-bubblegum-3bb722.netlify.app`
+- **Redirect URL:** `https://aesthetic-bubblegum-3bb722.netlify.app/**`
+- Nastavení: Supabase → Authentication → URL Configuration
+
+---
+
+## 6. PWA (Progressive Web App)
 
 Aplikace je PWA-ready:
 
@@ -165,7 +210,7 @@ Aplikace je PWA-ready:
 
 ---
 
-## 6. Jak spustit
+## 7. Jak spustit
 
 ### Lokálně (rychlé)
 Dvojklik na `index.html` — otevře se v prohlížeči. Data se uloží do localStorage.
@@ -184,12 +229,13 @@ Nasazeno na Netlify — každý `git push` na `main` se automaticky promítne.
 
 ---
 
-## 7. Omezení prototypu
+## 8. Omezení prototypu
 
 | Oblast | Omezení | Řešení v budoucnu |
 |---|---|---|
-| Úložiště | localStorage ~5 MB, při stovkách tréninků může dojít místo | IndexedDB nebo cloud (Supabase) |
-| Editace | Nelze editovat sérii v uloženém tréninku (jen smazat) | Formulář pro editaci série |
-| Synchronizace | Data jsou pouze lokální, vázaná na prohlížeč | Uživatelský účet + cloud sync |
-| Bezpečnost | Žádná autentizace — data vidí každý, kdo má přístup k zařízení | Přihlášení + šifrování |
-| Výkon | Babel Standalone transpiluje JSX v prohlížeči — pomalejší první načtení | Build krok (Vite + React) |
+| Úložiště | Supabase free tier: 500 MB — při extrémním objemu dat zvážit upgrade | Supabase Pro plán |
+| Editace | Nelze editovat sérii v uloženém tréninku (jen smazat) | Formulář pro editaci série (TASK-01) |
+| Synchronizace | ✅ Vyřešeno — Supabase cloud sync napříč zařízeními | — |
+| Bezpečnost | ~~Žádná autentizace~~ ✅ Magic link auth + Row Level Security | — |
+| Výkon | Babel Standalone transpiluje JSX v prohlížeči — pomalejší první načtení | Build krok (Vite + React, TASK-11) |
+| Offline | Nové tréninky nelze uložit bez připojení (Supabase vyžaduje internet) | Offline queue + sync při obnovení spojení |
