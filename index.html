@@ -1002,39 +1002,35 @@
 
     // ─── Auth Screen ─────────────────────────────────────────────────────────
     function AuthScreen() {
+      const [step, setStep]       = useState('email'); // 'email' | 'otp'
       const [email, setEmail]     = useState('');
-      const [sent, setSent]       = useState(false);
+      const [otp, setOtp]         = useState('');
       const [loading, setLoading] = useState(false);
       const [error, setError]     = useState('');
 
-      const handleSubmit = async (e) => {
+      const sendCode = async (e) => {
         e.preventDefault();
         if (!email.trim()) return;
         setLoading(true); setError('');
-        const redirectTo = window.location.origin + window.location.pathname;
-        const { error: err } = await sb.auth.signInWithOtp({
-          email: email.trim(),
-          options: { emailRedirectTo: redirectTo },
-        });
+        const { error: err } = await sb.auth.signInWithOtp({ email: email.trim() });
         setLoading(false);
         if (err) setError(err.message);
-        else setSent(true);
+        else setStep('otp');
       };
 
-      if (sent) return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-          <div className="bg-white rounded-2xl p-8 max-w-sm w-full shadow-sm border border-gray-100 text-center">
-            <div className="text-5xl mb-4">📧</div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Zkontroluj email</h2>
-            <p className="text-sm text-gray-500 mb-1">Poslali jsme odkaz na</p>
-            <p className="text-sm font-semibold text-gray-800 mb-4">{email}</p>
-            <p className="text-sm text-gray-400">Klikni na odkaz v emailu a jsi přihlášena.</p>
-            <button onClick={() => setSent(false)} className="mt-5 text-sm text-indigo-600 hover:underline">
-              Zadat jiný email
-            </button>
-          </div>
-        </div>
-      );
+      const verifyCode = async (e) => {
+        e.preventDefault();
+        if (otp.trim().length < 6) return;
+        setLoading(true); setError('');
+        const { error: err } = await sb.auth.verifyOtp({
+          email: email.trim(),
+          token: otp.trim(),
+          type: 'email',
+        });
+        setLoading(false);
+        if (err) setError('Nesprávný nebo expirovaný kód. Zkus to znovu.');
+        // Pokud OK → onAuthStateChange se postará o přihlášení
+      };
 
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -1044,22 +1040,46 @@
               <h1 className="text-2xl font-bold text-gray-900">GymLog</h1>
               <p className="text-sm text-gray-400 mt-1">Přihlas se a sleduj svůj pokrok</p>
             </div>
-            <form onSubmit={handleSubmit}>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Tvůj email</label>
-              <input
-                type="email" value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="ty@example.com" required
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
-              />
-              {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
-              <button type="submit" disabled={loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white py-3 rounded-xl text-sm font-semibold transition-colors">
-                {loading ? 'Odesílám...' : 'Poslat přihlašovací odkaz'}
-              </button>
-            </form>
-            <p className="text-xs text-gray-400 text-center mt-4">
-              Bez hesla — přihlásíš se kliknutím na odkaz v emailu
-            </p>
+
+            {step === 'email' ? (
+              <form onSubmit={sendCode}>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Tvůj email</label>
+                <input
+                  type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="ty@example.com" required autoComplete="email"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
+                />
+                {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+                <button type="submit" disabled={loading}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white py-3 rounded-xl text-sm font-semibold transition-colors">
+                  {loading ? 'Odesílám...' : 'Poslat kód'}
+                </button>
+                <p className="text-xs text-gray-400 text-center mt-4">
+                  Pošleme ti 6místný kód na email — bez hesla
+                </p>
+              </form>
+            ) : (
+              <form onSubmit={verifyCode}>
+                <p className="text-sm text-gray-500 mb-1 text-center">Kód jsme poslali na</p>
+                <p className="text-sm font-semibold text-gray-800 mb-5 text-center">{email}</p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">6místný kód z emailu</label>
+                <input
+                  type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6}
+                  value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                  placeholder="123456" autoComplete="one-time-code" autoFocus
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-2xl font-mono tracking-[0.4em] text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
+                />
+                {error && <p className="text-red-500 text-sm mb-3 text-center">{error}</p>}
+                <button type="submit" disabled={loading || otp.length < 6}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white py-3 rounded-xl text-sm font-semibold transition-colors">
+                  {loading ? 'Ověřuji...' : 'Přihlásit se'}
+                </button>
+                <button type="button" onClick={() => { setStep('email'); setOtp(''); setError(''); }}
+                  className="w-full mt-3 text-sm text-gray-400 hover:text-indigo-600 transition-colors">
+                  ← Zadat jiný email
+                </button>
+              </form>
+            )}
           </div>
         </div>
       );
