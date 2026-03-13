@@ -1034,11 +1034,24 @@
 
     // ─── Auth Screen ─────────────────────────────────────────────────────────
     function AuthScreen() {
-      const [step, setStep]       = useState('email'); // 'email' | 'otp'
-      const [email, setEmail]     = useState(() => localStorage.getItem('gymlog_last_email') || '');
+      const [step, setStep]       = useState(() => sessionStorage.getItem('gymlog_otp_step') || 'email');
+      const [email, setEmail]     = useState(() => sessionStorage.getItem('gymlog_otp_email') || localStorage.getItem('gymlog_last_email') || '');
       const [otp, setOtp]         = useState('');
       const [loading, setLoading] = useState(false);
       const [error, setError]     = useState('');
+
+      const goToOtp = (em) => {
+        sessionStorage.setItem('gymlog_otp_step', 'otp');
+        sessionStorage.setItem('gymlog_otp_email', em);
+        localStorage.setItem('gymlog_last_email', em);
+        setStep('otp');
+      };
+
+      const goToEmail = () => {
+        sessionStorage.removeItem('gymlog_otp_step');
+        sessionStorage.removeItem('gymlog_otp_email');
+        setStep('email'); setOtp(''); setError('');
+      };
 
       const sendCode = async (e) => {
         e.preventDefault();
@@ -1047,7 +1060,7 @@
         const { error: err } = await sb.auth.signInWithOtp({ email: email.trim() });
         setLoading(false);
         if (err) setError(err.message);
-        else { localStorage.setItem('gymlog_last_email', email.trim()); setStep('otp'); }
+        else goToOtp(email.trim());
       };
 
       const verifyCode = async (e) => {
@@ -1106,7 +1119,7 @@
                   className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white py-3 rounded-xl text-sm font-semibold transition-colors">
                   {loading ? 'Ověřuji...' : 'Přihlásit se'}
                 </button>
-                <button type="button" onClick={() => { setStep('email'); setOtp(''); setError(''); }}
+                <button type="button" onClick={goToEmail}
                   className="w-full mt-3 text-sm text-gray-400 hover:text-indigo-600 transition-colors">
                   ← Zadat jiný email
                 </button>
@@ -1237,6 +1250,8 @@
 
         const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
           if (event === 'SIGNED_IN' && session?.user) {
+            sessionStorage.removeItem('gymlog_otp_step');
+            sessionStorage.removeItem('gymlog_otp_email');
             userRef.current = session.user;
             setUser(session.user);
             load(WORKOUTS_KEY, []).length > 0 ? setAppState('migrating') : loadData(session.user.id);
