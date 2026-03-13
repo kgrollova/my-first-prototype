@@ -1,6 +1,6 @@
 # GymLog — Dokumentace prototypu
 
-> Verze dokumentu: 1.2 · Březen 2026
+> Verze dokumentu: 1.3 · Březen 2026
 
 ---
 
@@ -142,7 +142,10 @@ Data jsou uložena v Supabase (PostgreSQL) se zapnutým Row Level Security — k
 - Přehled všech cviků a jejich sérií
 - Zobrazení adaptované na typ cviku (silový / kardio / běh)
 - Kliknutí na název cviku → přechod na historii daného cviku
+- **Smazání série** — křížek (×) na konci každého řádku série
+- **Smazání cviku** — ikona koše v hlavičce cviku; odstraní cvik i se všemi sériemi
 - Smazání celého tréninku s potvrzovacím dialogem
+- Všechny změny se okamžitě synchronizují do Supabase
 
 ### 4.4 Detail cviku (progrese)
 - Přepínač časového rozsahu: Vše / 30 dní / 90 dní
@@ -173,15 +176,23 @@ Data jsou uložena v Supabase (PostgreSQL) se zapnutým Row Level Security — k
 
 ## 5. Autentizace (Supabase Auth)
 
-### Přihlašovací flow (Magic Link)
-1. Uživatel zadá email na přihlašovací obrazovce
-2. Supabase pošle email s jednorázovým odkazem (platný 1 hodinu)
-3. Kliknutím na odkaz prohlížeč přesměruje zpět do aplikace s auth tokenem v URL hash
-4. Supabase JS klient token zachytí, vytvoří session a spustí `onAuthStateChange` event
+### Přihlašovací flow (OTP kód)
+1. Uživatel zadá email na přihlašovací obrazovce (email se předvyplní z předchozí session)
+2. Supabase pošle email s 6místným jednorázovým kódem (OTP)
+3. Uživatel zadá kód přímo v aplikaci — aplikace zavolá `verifyOtp()`
+4. Supabase ověří kód, vytvoří session a spustí `onAuthStateChange` event
 5. Aplikace načte data z cloudu a zobrazí dashboard
 
+> **Proč OTP místo magic linku:** Na iOS PWA by klik na odkaz v emailu otevřel Safari (oddělená paměť od PWA) a uživatel by byl přihlášen v prohlížeči, ne v nainstalované aplikaci. OTP kód uživatel opíše přímo v PWA bez opuštění aplikace.
+
+### Persistence OTP kroku na iOS
+- Po odeslání emailu se `step='otp'` a `email` uloží do `sessionStorage`
+- iOS PWA může být při přepnutí do emailové aplikace restartována — `sessionStorage` přežije
+- Po zadání správného kódu se `sessionStorage` automaticky vyčistí
+- E-mail se navíc ukládá do `localStorage` (`gymlog_last_email`) pro předvyplnění při příštím přihlášení
+
 ### Správa session
-- Session je uložena v `localStorage` pod klíčem Supabase (`sb-*`) — přežije refresh stránky
+- Session je uložena v `localStorage` pod klíčem Supabase (`sb-*`) — přežije refresh stránky i restart PWA
 - `onAuthStateChange` poslouchá změny (přihlášení, odhlášení, expiraci)
 - Odhlášení: tlačítko v pravém horním rohu dashboardu (kroužek s iniciálou emailu)
 
@@ -229,13 +240,34 @@ Nasazeno na Netlify — každý `git push` na `main` se automaticky promítne.
 
 ---
 
-## 8. Omezení prototypu
+## 8. SMTP a emailové limity
+
+Supabase free tier omezuje odesílání emailů na ~2–3 za hodinu. Pro produkční použití je doporučeno napojit vlastní SMTP.
+
+### Nastavení vlastního SMTP (Resend.com — doporučeno)
+
+1. Vytvoř účet na `resend.com` (free: 100 emailů/den, 3 000/měsíc)
+2. V Resend dashboardu: **API Keys → Create API Key** → zkopíruj klíč
+3. V Supabase: **Project Settings → Authentication → SMTP Settings → Enable Custom SMTP**
+4. Vyplň:
+   - **Host:** `smtp.resend.com`
+   - **Port:** `465`
+   - **Username:** `resend`
+   - **Password:** [Resend API klíč]
+   - **Sender email:** `gymlog@resend.dev` (nebo vlastní doména)
+   - **Sender name:** `GymLog`
+5. Uložit — od teď posílá Resend, žádný hodinový limit
+
+---
+
+## 9. Omezení prototypu
 
 | Oblast | Omezení | Řešení v budoucnu |
 |---|---|---|
 | Úložiště | Supabase free tier: 500 MB — při extrémním objemu dat zvážit upgrade | Supabase Pro plán |
 | Editace | Nelze editovat sérii v uloženém tréninku (jen smazat) | Formulář pro editaci série (TASK-01) |
 | Synchronizace | ✅ Vyřešeno — Supabase cloud sync napříč zařízeními | — |
-| Bezpečnost | ~~Žádná autentizace~~ ✅ Magic link auth + Row Level Security | — |
+| Bezpečnost | ✅ OTP auth + Row Level Security | — |
 | Výkon | Babel Standalone transpiluje JSX v prohlížeči — pomalejší první načtení | Build krok (Vite + React, TASK-11) |
 | Offline | Nové tréninky nelze uložit bez připojení (Supabase vyžaduje internet) | Offline queue + sync při obnovení spojení |
+| Email limity | Supabase free tier ~2–3 emaily/hodinu | Vlastní SMTP přes Resend.com (viz sekce 8) |
