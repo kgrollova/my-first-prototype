@@ -661,8 +661,19 @@
     }
 
     // ─── Workout Detail ───────────────────────────────────────────────────────
-    function WorkoutDetail({ workout, onBack, onDelete, onOpenExercise }) {
+    function WorkoutDetail({ workout, onBack, onDelete, onUpdate, onOpenExercise }) {
       const [confirmDelete, setConfirmDelete] = useState(false);
+
+      const deleteSet = (exId, setId) => {
+        const newExercises = workout.exercises.map(ex =>
+          ex.id !== exId ? ex : { ...ex, sets: ex.sets.filter(s => s.id !== setId) }
+        ).filter(ex => ex.sets.length > 0 || ex.id !== exId);
+        onUpdate(workout.id, newExercises);
+      };
+
+      const deleteExercise = (exId) => {
+        onUpdate(workout.id, workout.exercises.filter(ex => ex.id !== exId));
+      };
 
       return (
         <div className="max-w-2xl mx-auto px-4 py-6">
@@ -732,64 +743,85 @@
           <div className="space-y-3">
             {workout.exercises.map(ex => (
               <div key={ex.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <button
-                  onClick={() => onOpenExercise(ex.name)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left">
-                  <span className="font-semibold text-gray-900 text-sm">{ex.name}</span>
-                  <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-                <div className="px-4 pb-3">
+                <div className="flex items-center px-4 py-3 border-b border-gray-50">
+                  <button
+                    onClick={() => onOpenExercise(ex.name)}
+                    className="flex-1 flex items-center gap-2 hover:bg-gray-50 -mx-1 px-1 rounded-lg transition-colors text-left">
+                    <span className="font-semibold text-gray-900 text-sm">{ex.name}</span>
+                    <svg className="w-4 h-4 text-gray-300 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => deleteExercise(ex.id)}
+                    className="ml-2 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="px-4 pb-3 pt-2">
                   {(() => {
                     const isCardioEx = ex.sets.some(s => s.time != null || (s.weight == null && s.reps == null));
                     const isRunningEx = ex.sets.some(s => s.distance != null);
                     if (!isCardioEx) return (
                       <>
-                        <div className="grid grid-cols-3 gap-2 mb-2 px-2">
+                        <div className="grid gap-2 mb-2 px-2" style={{gridTemplateColumns:'1.5rem 1fr 1fr 1.5rem'}}>
                           <p className="text-xs text-gray-400">#</p>
                           <p className="text-xs text-gray-400">Váha</p>
                           <p className="text-xs text-gray-400">Opakování</p>
+                          <p></p>
                         </div>
                         {ex.sets.map((set, i) => (
-                          <div key={set.id} className="grid grid-cols-3 gap-2 px-2 py-1 rounded-lg hover:bg-gray-50">
+                          <div key={set.id} className="grid gap-2 px-2 py-1 rounded-lg hover:bg-gray-50 items-center" style={{gridTemplateColumns:'1.5rem 1fr 1fr 1.5rem'}}>
                             <span className="text-sm text-gray-500">{i + 1}</span>
                             <span className="text-sm font-medium text-gray-800">{set.weight != null ? `${set.weight} kg` : '–'}</span>
                             <span className="text-sm font-medium text-gray-800">{set.reps != null ? `${set.reps}×` : '–'}</span>
+                            <button onClick={() => deleteSet(ex.id, set.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
                           </div>
                         ))}
                       </>
                     );
                     if (isRunningEx) return (
                       <>
-                        <div className="grid grid-cols-4 gap-2 mb-2 px-2">
+                        <div className="grid gap-2 mb-2 px-2" style={{gridTemplateColumns:'1.5rem 1fr 1fr 1fr 1.5rem'}}>
                           <p className="text-xs text-gray-400">#</p>
                           <p className="text-xs text-gray-400">Čas</p>
                           <p className="text-xs text-gray-400">Km</p>
                           <p className="text-xs text-gray-400">Kcal</p>
+                          <p></p>
                         </div>
                         {ex.sets.map((set, i) => (
-                          <div key={set.id} className="grid grid-cols-4 gap-2 px-2 py-1 rounded-lg hover:bg-gray-50">
+                          <div key={set.id} className="grid gap-2 px-2 py-1 rounded-lg hover:bg-gray-50 items-center" style={{gridTemplateColumns:'1.5rem 1fr 1fr 1fr 1.5rem'}}>
                             <span className="text-sm text-gray-500">{i + 1}</span>
                             <span className="text-sm font-medium text-gray-800">{set.time != null ? `${set.time} min` : '–'}</span>
                             <span className="text-sm font-medium text-gray-800">{set.distance != null ? `${set.distance} km` : '–'}</span>
                             <span className="text-sm font-medium text-gray-800">{set.kcal != null ? `${set.kcal} kcal` : '–'}</span>
+                            <button onClick={() => deleteSet(ex.id, set.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
                           </div>
                         ))}
                       </>
                     );
                     return (
                       <>
-                        <div className="grid grid-cols-3 gap-2 mb-2 px-2">
+                        <div className="grid gap-2 mb-2 px-2" style={{gridTemplateColumns:'1.5rem 1fr 1fr 1.5rem'}}>
                           <p className="text-xs text-gray-400">#</p>
                           <p className="text-xs text-gray-400">Čas</p>
                           <p className="text-xs text-gray-400">Kcal</p>
+                          <p></p>
                         </div>
                         {ex.sets.map((set, i) => (
-                          <div key={set.id} className="grid grid-cols-3 gap-2 px-2 py-1 rounded-lg hover:bg-gray-50">
+                          <div key={set.id} className="grid gap-2 px-2 py-1 rounded-lg hover:bg-gray-50 items-center" style={{gridTemplateColumns:'1.5rem 1fr 1fr 1.5rem'}}>
                             <span className="text-sm text-gray-500">{i + 1}</span>
                             <span className="text-sm font-medium text-gray-800">{set.time != null ? `${set.time} min` : '–'}</span>
                             <span className="text-sm font-medium text-gray-800">{set.kcal != null ? `${set.kcal} kcal` : '–'}</span>
+                            <button onClick={() => deleteSet(ex.id, set.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
                           </div>
                         ))}
                       </>
@@ -1003,7 +1035,7 @@
     // ─── Auth Screen ─────────────────────────────────────────────────────────
     function AuthScreen() {
       const [step, setStep]       = useState('email'); // 'email' | 'otp'
-      const [email, setEmail]     = useState('');
+      const [email, setEmail]     = useState(() => localStorage.getItem('gymlog_last_email') || '');
       const [otp, setOtp]         = useState('');
       const [loading, setLoading] = useState(false);
       const [error, setError]     = useState('');
@@ -1015,7 +1047,7 @@
         const { error: err } = await sb.auth.signInWithOtp({ email: email.trim() });
         setLoading(false);
         if (err) setError(err.message);
-        else setStep('otp');
+        else { localStorage.setItem('gymlog_last_email', email.trim()); setStep('otp'); }
       };
 
       const verifyCode = async (e) => {
@@ -1255,6 +1287,12 @@
         setWorkouts(prev => prev.filter(w => w.id !== id));
       };
 
+      const updateWorkout = async (workoutId, newExercises) => {
+        const uid = userRef.current?.id;
+        if (uid) await sb.from('workouts').update({ exercises: newExercises }).eq('id', workoutId).eq('user_id', uid);
+        setWorkouts(prev => prev.map(w => w.id === workoutId ? { ...w, exercises: newExercises } : w));
+      };
+
       const handleLogout = async () => {
         await sb.auth.signOut();
       };
@@ -1294,6 +1332,7 @@
             workout={workout}
             onBack={() => setView({ type: 'dashboard' })}
             onDelete={deleteWorkout}
+            onUpdate={updateWorkout}
             onOpenExercise={(name) => setView({ type: 'exercise-detail', exerciseName: name })}
           />
         );
